@@ -24,7 +24,9 @@ use tokio::sync::mpsc;
 use tokio::try_join;
 
 use myrulesiot::engine;
-use myrulesiot::mqtt::{self, ActionMessage, ConnectionMessage, ConnectionResult, ConnectionState};
+use myrulesiot::mqtt::{
+    self, ActionMessage, ConnectionMessage, ConnectionReducer, ConnectionResult, ConnectionState,
+};
 use myrulesiot::timer;
 
 mod configuration;
@@ -33,21 +35,24 @@ fn app_final(_: &HashMap<String, Vec<u8>>, action: &ActionMessage) -> bool {
     action.matches_action("SYSMR/system_action", "exit".into())
 }
 
-fn app_reducer(state: ConnectionState, action: ActionMessage) -> ConnectionState {
-    let mut messages = Vec::<ConnectionMessage>::new();
-    let mut newmap = state.info.clone();
+fn app_reducer() -> ConnectionReducer {
+    let reducers = configuration::app_map_reducers();
+    Box::new(move |state: ConnectionState, action: ActionMessage| {
+        let mut messages = Vec::<ConnectionMessage>::new();
+        let mut newmap = state.info.clone();
 
-    for f in configuration::app_map_reducers() {
-        messages.append(&mut f(&mut newmap, &action));
-    }
+        for f in &reducers {
+            messages.append(&mut f(&mut newmap, &action));
+        }
 
-    let is_final = app_final(&state.info, &action);
+        let is_final = app_final(&state.info, &action);
 
-    ConnectionState {
-        info: newmap,
-        messages,
-        is_final,
-    }
+        ConnectionState {
+            info: newmap,
+            messages,
+            is_final,
+        }
+    })
 }
 
 #[tokio::main]
@@ -64,8 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
     let mqttpublishtask = mqtt::task_publication_loop(pub_rx, client); // or pub_tx.subscribe() if broadcast
 
-    let engine = mqtt::create_engine(Box::new(app_reducer));
-    let enginetask = engine::task_runtime_loop(pub_tx, sub_rx, engine);
+    let enginetask = engine::task_runtime_loop(pub_tx, sub_rx, mqtt::create_engine(app_reducer()));
 
     let _ = try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
 

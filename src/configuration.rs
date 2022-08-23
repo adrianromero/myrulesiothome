@@ -31,24 +31,30 @@ use myrulesiot::rules::zigbee;
 pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
     // Defines connection properties
     let connection_info = ConnectionValues {
-        id: "rustclient-231483".into(),
-        host: "localhost".into(),
+        id: String::from("rustclient-231483"),
+        host: String::from("localhost"),
         clean_session: true,
         ..Default::default()
     };
-    let subscriptions = &[
-        ("myhelloiot/#", QoS::AtMostOnce),
-        ("zigbee2mqtt/0x000b57fffe323b4d", QoS::AtMostOnce), // presence sensor
-        ("zigbee2mqtt/0x000b57fffe4fc5ca", QoS::AtMostOnce), // remote control
-        ("SYSMR/system_action", QoS::AtMostOnce),
-        ("ESPURNA04/#", QoS::AtMostOnce),
+    let subscriptions = vec![
+        (String::from("myhelloiot/#"), QoS::AtMostOnce),
+        (
+            String::from("zigbee2mqtt/0x000b57fffe323b4d"),
+            QoS::AtMostOnce,
+        ), // presence sensor
+        (
+            String::from("zigbee2mqtt/0x000b57fffe4fc5ca"),
+            QoS::AtMostOnce,
+        ), // remote control
+        (String::from("SYSMR/system_action"), QoS::AtMostOnce),
+        (String::from("ESPURNA04/#"), QoS::AtMostOnce),
     ];
 
     mqtt::new_connection(connection_info, subscriptions).await
 }
 
 type FnReducer =
-    Box<dyn FnOnce(&mut HashMap<String, Vec<u8>>, &ActionMessage) -> Vec<ConnectionMessage>>;
+    Box<dyn Fn(&mut HashMap<String, Vec<u8>>, &ActionMessage) -> Vec<ConnectionMessage> + Send>;
 
 type ReducersVec = Vec<FnReducer>;
 
