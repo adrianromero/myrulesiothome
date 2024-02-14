@@ -32,7 +32,7 @@ pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
     // Defines connection properties
     let connection_info = ConnectionValues {
         id: String::from("rustclient-231483"),
-        host: String::from("localhost"),
+        host: String::from("adrian-elitedesk.local"),
         clean_session: true,
         ..Default::default()
     };

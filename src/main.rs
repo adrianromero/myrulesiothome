@@ -69,7 +69,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
     let mqttpublishtask = mqtt::task_publication_loop(pub_rx, client); // or pub_tx.subscribe() if broadcast
 
-    let enginetask = engine::task_runtime_loop(pub_tx, sub_rx, mqtt::create_engine(app_reducer()));
+    let enginetask =
+        engine::task_runtime_loop(pub_tx, sub_rx, mqtt::ConnectionEngine::new(app_reducer()));
 
     let _ = try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
 
