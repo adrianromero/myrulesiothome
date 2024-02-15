@@ -18,10 +18,9 @@
 //
 
 use rumqttc::{AsyncClient, ClientError, EventLoop, QoS};
-use std::collections::HashMap;
 
 use myrulesiot::mqtt;
-use myrulesiot::mqtt::{ActionMessage, ConnectionMessage, ConnectionValues};
+use myrulesiot::mqtt::ConnectionValues;
 
 use myrulesiot::rules::forward;
 // use myrulesiot::rules::lights;
@@ -52,12 +51,7 @@ pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
     mqtt::new_connection(connection_info, subscriptions).await
 }
 
-type FnReducer =
-    Box<dyn Fn(&mut HashMap<String, Vec<u8>>, &ActionMessage) -> Vec<ConnectionMessage> + Send>;
-
-type ReducersVec = Vec<FnReducer>;
-
-pub fn app_map_reducers() -> ReducersVec {
+pub fn app_map_reducers() -> Vec<mqtt::FnMQTTReducer> {
     // 0x000b57fffe22a715 Bulb salon
     // 0x000b57fffe4b66f7 Bulb main room
     // 0x000b57fffe4fc5ca Remote
