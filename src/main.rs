@@ -47,6 +47,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         mqtt::ConnectionEngine::new(mqtt::create_reducer(configuration::app_map_reducers())),
     );
 
+    std::mem::drop(sub_tx);
+    std::mem::drop(pub_tx);
+
     let _ = try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
 
     log::info!("Exiting myrulesiot...");
