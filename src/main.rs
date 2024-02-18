@@ -1,5 +1,5 @@
 //    MyRulesIoT  Project is a rules engine for MQTT based on MyRulesIoT lib
-//    Copyright (C) 2022 Adrián Romero Corchado.
+//    Copyright (C) 2022-2024my  Adrián Romero Corchado.
 //
 //    This file is part of MyRulesIoT.
 //
@@ -22,7 +22,7 @@ use std::error::Error;
 use tokio::sync::mpsc;
 use tokio::try_join;
 
-use myrulesiot::mqtt::{self, ActionMessage, ConnectionResult};
+use myrulesiot::mqtt::{self, ConnectionAction, ConnectionResult};
 use myrulesiot::runtime;
 
 mod configuration;
@@ -34,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("Starting myrulesiot...");
     let (client, eventloop) = configuration::connect_mqtt().await?;
 
-    let (sub_tx, sub_rx) = mpsc::channel::<ActionMessage>(10);
+    let (sub_tx, sub_rx) = mpsc::channel::<ConnectionAction>(10);
     let (pub_tx, pub_rx) = mpsc::channel::<ConnectionResult>(10);
 
     let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
