@@ -22,7 +22,7 @@ use std::error::Error;
 use tokio::sync::mpsc;
 use tokio::try_join;
 
-use myrulesiot::mqtt::{self, ConnectionAction, ConnectionResult};
+use myrulesiot::mqtt::{self, EngineAction, EngineResult};
 use myrulesiot::runtime;
 
 mod configuration;
@@ -34,14 +34,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("Starting myrulesiot...");
     let (client, eventloop) = configuration::connect_mqtt().await?;
 
-    let (sub_tx, sub_rx) = mpsc::channel::<ConnectionAction>(10);
-    let (pub_tx, pub_rx) = mpsc::channel::<ConnectionResult>(10);
+    let (sub_tx, sub_rx) = mpsc::channel::<EngineAction>(10);
+    let (pub_tx, pub_rx) = mpsc::channel::<EngineResult>(10);
 
     let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
     let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
     let mqttpublishtask = mqtt::task_publication_loop(pub_rx, client); // or pub_tx.subscribe() if broadcast
 
-    let enginetask = runtime::task_runtime_loop(
+    let enginetask = runtime::task_runtime_init_loop(
         &pub_tx,
         sub_rx,
         mqtt::ConnectionEngine::new(mqtt::create_reducer(configuration::app_map_reducers())),

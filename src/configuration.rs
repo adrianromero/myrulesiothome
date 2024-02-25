@@ -17,10 +17,13 @@
 //    along with MyRulesIoT.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+use std::collections::HashMap;
+
 use rumqttc::{AsyncClient, ClientError, EventLoop, QoS};
 
 use myrulesiot::mqtt;
 use myrulesiot::mqtt::ConnectionValues;
+use myrulesiot::mqtt::EngineFunction;
 
 use myrulesiot::rules::forward;
 // use myrulesiot::rules::lights;
@@ -51,6 +54,19 @@ pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
     mqtt::new_connection(connection_info, subscriptions).await
 }
 
+pub fn app_engine_functions() -> HashMap<String, EngineFunction> {
+    HashMap::from([
+        (
+            String::from("forward_action"),
+            myrulesiot::rules::forward::engine_forward_action as EngineFunction,
+        ),
+        (
+            String::from("forward_user_action_tick"),
+            myrulesiot::rules::forward::engine_forward_user_action_tick as EngineFunction,
+        ),
+    ])
+}
+
 pub fn app_map_reducers() -> Vec<mqtt::FnMQTTReducer> {
     // 0x000b57fffe22a715 Bulb salon
     // 0x000b57fffe4b66f7 Bulb main room
@@ -58,7 +74,7 @@ pub fn app_map_reducers() -> Vec<mqtt::FnMQTTReducer> {
     // 0x000b57fffe323b4d Light sensor
     vec![
         Box::new(savelist::save_value("SYSMR/user_action/tick")),
-        Box::new(forward::forward_user_action_tick("myhelloiot/timer")),
+        Box::new(forward::box_forward_user_action_tick("myhelloiot/timer")),
         Box::new(zigbee::light_toggle(
             zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
             "zigbee2mqtt/0x000b57fffe22a715",
