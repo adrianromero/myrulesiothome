@@ -25,11 +25,6 @@ use myrulesiot::mqtt;
 use myrulesiot::mqtt::ConnectionValues;
 use myrulesiot::mqtt::EngineFunction;
 
-use myrulesiot::rules::forward;
-// use myrulesiot::rules::lights;
-use myrulesiot::rules::savelist;
-use myrulesiot::rules::zigbee;
-
 pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
     // Defines connection properties
     let connection_info = ConnectionValues {
@@ -48,7 +43,7 @@ pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
             String::from("zigbee2mqtt/0x000b57fffe4fc5ca"),
             QoS::AtMostOnce,
         ), // remote control
-        (String::from("SYSMR/system_action"), QoS::AtMostOnce),
+        (String::from("SYSMR/system_action/#"), QoS::AtMostOnce),
     ];
 
     mqtt::new_connection(connection_info, subscriptions).await
@@ -61,64 +56,64 @@ pub fn app_engine_functions() -> HashMap<String, EngineFunction> {
             myrulesiot::rules::forward::engine_forward_action as EngineFunction,
         ),
         (
-            String::from("forward_user_action_tick"),
-            myrulesiot::rules::forward::engine_forward_user_action_tick as EngineFunction,
+            String::from("forward_user_action"),
+            myrulesiot::rules::forward::engine_forward_user_action as EngineFunction,
         ),
     ])
 }
 
-pub fn app_map_reducers() -> Vec<mqtt::FnMQTTReducer> {
-    // 0x000b57fffe22a715 Bulb salon
-    // 0x000b57fffe4b66f7 Bulb main room
-    // 0x000b57fffe4fc5ca Remote
-    // 0x000b57fffe323b4d Light sensor
-    vec![
-        Box::new(savelist::save_value("SYSMR/user_action/tick")),
-        Box::new(forward::box_forward_user_action_tick("myhelloiot/timer")),
-        Box::new(zigbee::light_toggle(
-            zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
-            "zigbee2mqtt/0x000b57fffe22a715",
-        )),
-        Box::new(zigbee::light_toggle(
-            zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
-            "zigbee2mqtt/0x000b57fffe4b66f7",
-        )),
-        // Box::new(rules::light_actions("myhelloiot/light1")),
-        // Box::new(rules::modal_value("myhelloiot/alarm")),
-        // Box::new(savelist::save_list(
-        //     "myhelloiot/temperature",
-        //     &chrono::Duration::seconds(20),
-        //     40,
-        // )),
-        // Box::new(forward::forward_action(
-        //     "zigbee2mqtt/0x000b57fffe4fc5ca",
-        //     "ESPURNA04/relay/0/set",
-        // )),
-        // Box::new(lights::toggle(
-        //     zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
-        //     "ESPURNA04/relay/0",
-        //     "ESPURNA04/relay/0/set",
-        // )),
-        // Box::new(lights::light_time(
-        //     zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
-        //     "ESPURNA04/relay/0",
-        //     "ESPURNA04/relay/0/set",
-        // )),
-        // Box::new(lights::light_on(
-        //     zigbee::actuator_brightness_up("zigbee2mqtt/0x000b57fffe4fc5ca"),
-        //     "ESPURNA04/relay/0",
-        //     "ESPURNA04/relay/0/set",
-        // )),
-        // Box::new(lights::light_off(
-        //     zigbee::actuator_brightness_down("zigbee2mqtt/0x000b57fffe4fc5ca"),
-        //     "ESPURNA04/relay/0",
-        //     "ESPURNA04/relay/0/set",
-        // )),
-        // Box::new(lights::light_time_reset(
-        //     "ESPURNA04/relay/0",
-        //     "ESPURNA04/relay/0/set",
-        // )),
-        // Box::new(lights::status("ESPURNA04/relay/0")),
-        // Box::new(devices::simulate_relay("ESPURNA04/relay/0")),
-    ]
-}
+// pub fn app_map_reducers() -> Vec<mqtt::FnMQTTReducer> {
+//     // 0x000b57fffe22a715 Bulb salon
+//     // 0x000b57fffe4b66f7 Bulb main room
+//     // 0x000b57fffe4fc5ca Remote
+//     // 0x000b57fffe323b4d Light sensor
+//     vec![
+//         Box::new(savelist::save_value("SYSMR/user_action/tick")),
+//         Box::new(forward::box_forward_user_action_tick("myhelloiot/timer")),
+//         Box::new(zigbee::light_toggle(
+//             zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
+//             "zigbee2mqtt/0x000b57fffe22a715",
+//         )),
+//         Box::new(zigbee::light_toggle(
+//             zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
+//             "zigbee2mqtt/0x000b57fffe4b66f7",
+//         )),
+//         // Box::new(rules::light_actions("myhelloiot/light1")),
+//         // Box::new(rules::modal_value("myhelloiot/alarm")),
+//         // Box::new(savelist::save_list(
+//         //     "myhelloiot/temperature",
+//         //     &chrono::Duration::seconds(20),
+//         //     40,
+//         // )),
+//         // Box::new(forward::forward_action(
+//         //     "zigbee2mqtt/0x000b57fffe4fc5ca",
+//         //     "ESPURNA04/relay/0/set",
+//         // )),
+//         // Box::new(lights::toggle(
+//         //     zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
+//         //     "ESPURNA04/relay/0",
+//         //     "ESPURNA04/relay/0/set",
+//         // )),
+//         // Box::new(lights::light_time(
+//         //     zigbee::actuator_toggle("zigbee2mqtt/0x000b57fffe4fc5ca"),
+//         //     "ESPURNA04/relay/0",
+//         //     "ESPURNA04/relay/0/set",
+//         // )),
+//         // Box::new(lights::light_on(
+//         //     zigbee::actuator_brightness_up("zigbee2mqtt/0x000b57fffe4fc5ca"),
+//         //     "ESPURNA04/relay/0",
+//         //     "ESPURNA04/relay/0/set",
+//         // )),
+//         // Box::new(lights::light_off(
+//         //     zigbee::actuator_brightness_down("zigbee2mqtt/0x000b57fffe4fc5ca"),
+//         //     "ESPURNA04/relay/0",
+//         //     "ESPURNA04/relay/0/set",
+//         // )),
+//         // Box::new(lights::light_time_reset(
+//         //     "ESPURNA04/relay/0",
+//         //     "ESPURNA04/relay/0/set",
+//         // )),
+//         // Box::new(lights::status("ESPURNA04/relay/0")),
+//         // Box::new(devices::simulate_relay("ESPURNA04/relay/0")),
+//     ]
+// }

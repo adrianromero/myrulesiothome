@@ -44,7 +44,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let enginetask = runtime::task_runtime_init_loop(
         &pub_tx,
         sub_rx,
-        mqtt::ConnectionEngine::new(mqtt::create_reducer(configuration::app_map_reducers())),
+        mqtt::MasterEngine::new(
+            String::from("HOMERULES"),
+            configuration::app_engine_functions(),
+        ),
     );
 
     std::mem::drop(sub_tx);
