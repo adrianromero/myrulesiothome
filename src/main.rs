@@ -22,7 +22,7 @@ use std::error::Error;
 use tokio::sync::mpsc;
 use tokio::try_join;
 
-use myrulesiot::mqtt::{self, EngineAction, EngineResult};
+use myrulesiot::mqtt::{self, EngineAction, EngineResult, EngineState};
 use myrulesiot::runtime;
 
 mod configuration;
@@ -32,28 +32,65 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     log::info!("Starting myrulesiot...");
+    // Load state from disk
+
     let (client, eventloop) = configuration::connect_mqtt().await?;
 
     let (sub_tx, sub_rx) = mpsc::channel::<EngineAction>(10);
     let (pub_tx, pub_rx) = mpsc::channel::<EngineResult>(10);
 
-    let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
+    //let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
     let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
     let mqttpublishtask = mqtt::task_publication_loop(pub_rx, client); // or pub_tx.subscribe() if broadcast
 
-    let enginetask = runtime::task_runtime_init_loop(
+    let enginetask = runtime::task_runtime_loop(
         &pub_tx,
         sub_rx,
         mqtt::MasterEngine::new(
             String::from("HOMERULES"),
             configuration::app_engine_functions(),
         ),
+        EngineState::default(),
     );
+
+    // Push function
+    sub_tx.send(EngineAction {
+        topic: "HOMERULES/command/functions_push".into(),
+        payload: b"{\"name\":\"ikea_actuator\", \"parameters\": {\"topic\":\"zigbee2mqtt/Tradfri Remote\",\"command\":\"toggle\"}}".into(),
+        timestamp: 0,
+    })
+    .await.unwrap();
+
+    // Push function
+    sub_tx.send(EngineAction {
+        topic: "HOMERULES/command/functions_push".into(),
+        payload: b"{\"name\":\"shelly_relay\", \"parameters\": {\"topic\":\"shellies/shellyswitch01/relay/1/command\"}}".into(),
+        timestamp: 0,
+    })
+    .await.unwrap();
+
+    // Push function
+    sub_tx.send(EngineAction {
+        topic: "HOMERULES/command/functions_push".into(),
+        payload: b"{\"name\":\"ikea_actuator\", \"parameters\": {\"topic\":\"zigbee2mqtt/Tradfri Remote\",\"command\":\"brightness_down_click\"}}".into(),
+        timestamp: 0,
+    })
+    .await.unwrap();
+
+    // Push function
+    sub_tx.send(EngineAction {
+        topic: "HOMERULES/command/functions_push".into(),
+        payload: b"{\"name\":\"shelly_relay\", \"parameters\": {\"topic\":\"HOMERULES/command/exit\"}}".into(),
+        timestamp: 0,
+    })
+    .await.unwrap();
 
     std::mem::drop(sub_tx);
     std::mem::drop(pub_tx);
 
-    let _ = try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
+    let _ = try_join!(enginetask, mqttpublishtask, mqttsubscribetask)?;
+
+    // Save state to disk
 
     log::info!("Exiting myrulesiot...");
     Ok(())
