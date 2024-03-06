@@ -18,6 +18,7 @@
 //
 
 use std::error::Error;
+use std::fs;
 
 use tokio::sync::mpsc;
 use tokio::try_join;
@@ -31,6 +32,17 @@ mod configuration;
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
+    let init_state: EngineState = match fs::File::open("./engine_state.json") {
+        Ok(file) => serde_json::from_reader(&file).unwrap_or_else(|_err| {
+            log::info!("Engine State file does not contain a valid JSON. Loading default.");
+            EngineState::default()
+        }),
+        Err(_) => {
+            log::info!("Engine State file does not exist. Loading default.");
+            EngineState::default()
+        }
+    };
+
     log::info!("Starting myrulesiot...");
     // Load state from disk
 
@@ -39,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (sub_tx, sub_rx) = mpsc::channel::<EngineAction>(10);
     let (pub_tx, pub_rx) = mpsc::channel::<EngineResult>(10);
 
-    //let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
+    let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
     let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
     let mqttpublishtask = mqtt::task_publication_loop(pub_rx, client); // or pub_tx.subscribe() if broadcast
 
@@ -50,47 +62,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
             String::from("HOMERULES"),
             configuration::app_engine_functions(),
         ),
-        EngineState::default(),
+        init_state,
     );
-
-    // Push function
-    sub_tx.send(EngineAction {
-        topic: "HOMERULES/command/functions_push".into(),
-        payload: b"{\"name\":\"ikea_actuator\", \"parameters\": {\"topic\":\"zigbee2mqtt/Tradfri Remote\",\"command\":\"toggle\"}}".into(),
-        timestamp: 0,
-    })
-    .await.unwrap();
-
-    // Push function
-    sub_tx.send(EngineAction {
-        topic: "HOMERULES/command/functions_push".into(),
-        payload: b"{\"name\":\"shelly_relay\", \"parameters\": {\"topic\":\"shellies/shellyswitch01/relay/1/command\"}}".into(),
-        timestamp: 0,
-    })
-    .await.unwrap();
-
-    // Push function
-    sub_tx.send(EngineAction {
-        topic: "HOMERULES/command/functions_push".into(),
-        payload: b"{\"name\":\"ikea_actuator\", \"parameters\": {\"topic\":\"zigbee2mqtt/Tradfri Remote\",\"command\":\"brightness_down_click\"}}".into(),
-        timestamp: 0,
-    })
-    .await.unwrap();
-
-    // Push function
-    sub_tx.send(EngineAction {
-        topic: "HOMERULES/command/functions_push".into(),
-        payload: b"{\"name\":\"shelly_relay\", \"parameters\": {\"topic\":\"HOMERULES/command/exit\"}}".into(),
-        timestamp: 0,
-    })
-    .await.unwrap();
 
     std::mem::drop(sub_tx);
     std::mem::drop(pub_tx);
 
-    let _ = try_join!(enginetask, mqttpublishtask, mqttsubscribetask)?;
+    let (final_state, _, _, _) =
+        try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
 
     // Save state to disk
+
+    // Open a file for writing
+    if let Ok(file) = fs::File::create("engine_state.json") {
+        serde_json::to_writer_pretty(&file, &final_state).unwrap_or_else(|_err| {
+            log::info!("Cannot serialize Engine State to json.");
+        });
+    } else {
+        log::warn!("Cannot write Engine State to file");
+    }
 
     log::info!("Exiting myrulesiot...");
     Ok(())

@@ -41,7 +41,7 @@ pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
             QoS::AtMostOnce,
         ), // presence sensor
         (String::from("zigbee2mqtt/Tradfri Remote"), QoS::AtMostOnce), // remote control
-        (String::from("HOMERULES/command/exit"), QoS::AtMostOnce),
+        (String::from("HOMERULES/command/#"), QoS::AtMostOnce),
     ];
 
     mqtt::new_connection(connection_info, subscriptions).await
