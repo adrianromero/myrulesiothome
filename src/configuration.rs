@@ -17,32 +17,54 @@
 //    along with MyRulesIoT.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+use config::Config;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::HashMap;
 
 use myrulesiot::rules::forward;
 use myrulesiot::rules::zigbee;
-use rumqttc::{AsyncClient, ClientError, EventLoop, QoS};
+use rumqttc::{AsyncClient, ClientError, EventLoop};
 
 use myrulesiot::mqtt;
 use myrulesiot::mqtt::ConnectionValues;
 use myrulesiot::mqtt::EngineFunction;
 
-pub async fn connect_mqtt() -> Result<(AsyncClient, EventLoop), ClientError> {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Subscription {
+    topic: String,
+    qos: i32,
+}
+
+pub async fn connect_mqtt(settings: &Config) -> Result<(AsyncClient, EventLoop), ClientError> {
     // Defines connection properties
     let connection_info = ConnectionValues {
-        id: String::from("rustclient-231483"),
-        host: String::from("adrian-elitedesk.local"),
-        clean_session: true,
-        ..Default::default()
+        id: settings
+            .get_string("mqtt.connection.client_id")
+            .unwrap_or_else(|_| String::from("")),
+        host: settings
+            .get_string("mqtt.connection.host")
+            .unwrap_or_else(|_| String::from("localhost")),
+        port: settings.get_int("mqtt.connection.port").unwrap_or(1883) as u16,
+        keep_alive: settings.get_int("mqtt.connection.keep_alive").unwrap_or(5) as u16,
+        inflight: settings.get_int("mqtt.connection.inflight").unwrap_or(10) as u16,
+        clean_session: settings
+            .get_bool("mqtt.connection.clean_session")
+            .unwrap_or(false),
+        cap: settings.get_int("mqtt.connection.cap").unwrap_or(10) as usize,
     };
-    let subscriptions = vec![
-        (
-            String::from("zigbee2mqtt/0x000b57fffe323b4d"),
-            QoS::AtMostOnce,
-        ), // presence sensor
-        (String::from("zigbee2mqtt/Tradfri Remote"), QoS::AtMostOnce), // remote control
-        (String::from("HOMERULES/command/#"), QoS::AtMostOnce),
-    ];
+
+    let s: Vec<Subscription> = settings
+        .get::<Vec<Subscription>>("mqtt.subscriptions")
+        .unwrap_or(vec![]);
+
+    let mut subscriptions: Vec<(String, i32)> = s.into_iter().map(|s| (s.topic, s.qos)).collect();
+
+    let identifier = settings
+        .get_string("application.identifier")
+        .unwrap_or_else(|_| String::from("HOMERULES"));
+
+    subscriptions.push((format!("{}/command/#", identifier), 0));
 
     mqtt::new_connection(connection_info, subscriptions).await
 }

@@ -17,6 +17,7 @@
 //    along with MyRulesIoT.  If not, see <http://www.gnu.org/licenses/>.
 //
 
+use config::Config;
 use std::error::Error;
 use std::fs;
 
@@ -28,25 +29,36 @@ use myrulesiot::runtime;
 
 mod configuration;
 
+fn read_engine_state_file() -> Result<EngineState, Box<dyn Error>> {
+    let file = fs::File::open("./engine_state.json")?;
+    let engine_state = serde_json::from_reader(&file)?;
+    Ok(engine_state)
+}
+
+fn write_engine_state_file(state: &EngineState) -> Result<(), Box<dyn Error>> {
+    let file = fs::File::create("engine_state.json")?;
+    serde_json::to_writer_pretty(&file, state)?;
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
-    let init_state: EngineState = match fs::File::open("./engine_state.json") {
-        Ok(file) => serde_json::from_reader(&file).unwrap_or_else(|_err| {
-            log::info!("Engine State file does not contain a valid JSON. Loading default.");
-            EngineState::default()
-        }),
-        Err(_) => {
-            log::info!("Engine State file does not exist. Loading default.");
-            EngineState::default()
-        }
-    };
+    let settings = Config::builder()
+        .add_source(config::File::with_name("./homerules"))
+        .add_source(config::Environment::with_prefix("HOMERULES"))
+        .build()?;
+
+    let init_state = read_engine_state_file().unwrap_or_else(|_err| {
+        log::warn!("Cannot load initial state from file. Loading default.");
+        EngineState::default()
+    });
 
     log::info!("Starting myrulesiot...");
     // Load state from disk
 
-    let (client, eventloop) = configuration::connect_mqtt().await?;
+    let (client, eventloop) = configuration::connect_mqtt(&settings).await?;
 
     let (sub_tx, sub_rx) = mpsc::channel::<EngineAction>(10);
     let (pub_tx, pub_rx) = mpsc::channel::<EngineResult>(10);
@@ -59,7 +71,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         &pub_tx,
         sub_rx,
         mqtt::MasterEngine::new(
-            String::from("HOMERULES"),
+            settings
+                .get_string("application.identifier")
+                .unwrap_or_else(|_| String::from("HOMERULES")),
             configuration::app_engine_functions(),
         ),
         init_state,
@@ -71,16 +85,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (final_state, _, _, _) =
         try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
 
-    // Save state to disk
-
     // Open a file for writing
-    if let Ok(file) = fs::File::create("engine_state.json") {
-        serde_json::to_writer_pretty(&file, &final_state).unwrap_or_else(|_err| {
-            log::info!("Cannot serialize Engine State to json.");
-        });
-    } else {
-        log::warn!("Cannot write Engine State to file");
-    }
+    write_engine_state_file(&final_state).unwrap_or_else(|_err| {
+        log::warn!("Cannot write final state to file.");
+    });
 
     log::info!("Exiting myrulesiot...");
     Ok(())
