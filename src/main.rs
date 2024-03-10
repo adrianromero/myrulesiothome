@@ -29,11 +29,11 @@ use myrulesiot::runtime;
 
 mod configuration;
 
-fn read_engine_state_file() -> Result<EngineState, Box<dyn Error>> {
-    let file = fs::File::open("./engine_state.json")?;
-    let engine_state = serde_json::from_reader(&file)?;
-    Ok(engine_state)
-}
+// fn read_engine_state_file() -> Result<EngineState, Box<dyn Error>> {
+//     let file = fs::File::open("./engine_state.json")?;
+//     let engine_state = serde_json::from_reader(&file)?;
+//     Ok(engine_state)
+// }
 
 fn write_engine_state_file(state: &EngineState) -> Result<(), Box<dyn Error>> {
     let file = fs::File::create("engine_state.json")?;
@@ -50,10 +50,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .add_source(config::Environment::with_prefix("HOMERULES"))
         .build()?;
 
-    let init_state = read_engine_state_file().unwrap_or_else(|_err| {
-        log::warn!("Cannot load initial state from file. Loading default.");
-        EngineState::default()
-    });
+    let prefix_id = settings
+        .get_string("application.identifier")
+        .unwrap_or_else(|_| String::from("HOMERULES"));
+
+    // let init_state = read_engine_state_file().unwrap_or_else(|_err| {
+    //     log::warn!("Cannot load initial state from file. Loading default.");
+    //     EngineState::default()
+    // });
 
     log::info!("Starting myrulesiot...");
     // Load state from disk
@@ -62,28 +66,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (sub_tx, sub_rx) = mpsc::channel::<EngineAction>(10);
     let (pub_tx, pub_rx) = mpsc::channel::<EngineResult>(10);
+    let mut multirx = runtime::MultiRX::new(pub_rx);
 
     let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
+    let file_functions_task =
+        mqtt::task_file_functions_loop(&sub_tx, &prefix_id, "./engine_functions.json");
+
     let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
-    let mqttpublishtask = mqtt::task_publication_loop(pub_rx, client); // or pub_tx.subscribe() if broadcast
+    let mqttpublishtask = mqtt::task_publication_loop(multirx.create(), client);
+    let multitask = multirx.task_publication_loop();
 
     let enginetask = runtime::task_runtime_loop(
         &pub_tx,
         sub_rx,
-        mqtt::MasterEngine::new(
-            settings
-                .get_string("application.identifier")
-                .unwrap_or_else(|_| String::from("HOMERULES")),
-            configuration::app_engine_functions(),
-        ),
-        init_state,
+        mqtt::MasterEngine::new(prefix_id, configuration::app_engine_functions()),
+        EngineState::default(),
     );
 
     std::mem::drop(sub_tx);
     std::mem::drop(pub_tx);
 
-    let (final_state, _, _, _) =
-        try_join!(enginetask, mqttpublishtask, mqttsubscribetask, timertask)?;
+    let (final_state, _, _, _, _, _) = try_join!(
+        enginetask,
+        mqttpublishtask,
+        mqttsubscribetask,
+        file_functions_task,
+        timertask,
+        multitask
+    )?;
 
     // Open a file for writing
     write_engine_state_file(&final_state).unwrap_or_else(|_err| {
