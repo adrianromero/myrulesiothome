@@ -20,31 +20,24 @@
 use config::Config;
 use std::error::Error;
 use std::fs;
+use std::path::Path;
 
 use tokio::sync::mpsc;
-use tokio::try_join;
+use tokio::{task, try_join};
 
-use myrulesiot::mqtt::{self, EngineAction, EngineResult, EngineState};
+use myrulesiot::mqtt::{self, EngineAction, EngineResult, EngineState, ReducerFunction};
+use myrulesiot::mqtt::{ConnectionValues, Subscription};
 use myrulesiot::runtime;
 
 mod configuration;
 
-// fn read_engine_state_file() -> Result<EngineState, Box<dyn Error>> {
-//     let file = fs::File::open("./engine_state.json")?;
-//     let engine_state = serde_json::from_reader(&file)?;
-//     Ok(engine_state)
-// }
-
-fn write_engine_state_file(state: &EngineState) -> Result<(), Box<dyn Error>> {
-    let file = fs::File::create("engine_state.json")?;
-    serde_json::to_writer_pretty(&file, state)?;
-    Ok(())
-}
+const FUNCTIONS_PATH: &str = "./engine_functions.json";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
+    // Settings
     let settings = Config::builder()
         .add_source(config::File::with_name("./homerules"))
         .add_source(config::Environment::with_prefix("HOMERULES"))
@@ -54,30 +47,63 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .get_string("application.identifier")
         .unwrap_or_else(|_| String::from("HOMERULES"));
 
-    // let init_state = read_engine_state_file().unwrap_or_else(|_err| {
-    //     log::warn!("Cannot load initial state from file. Loading default.");
-    //     EngineState::default()
-    // });
-
-    log::info!("Starting myrulesiot...");
-    // Load state from disk
-
-    let (client, eventloop) = configuration::connect_mqtt(&settings).await?;
+    // Functions
+    let functions = if let Ok(true) = Path::new(FUNCTIONS_PATH).try_exists() {
+        let f = fs::read(FUNCTIONS_PATH).map_err(|error| {
+            format!(
+                "Cannot read ReducerFunctions file {}: {}",
+                FUNCTIONS_PATH, error
+            )
+        })?;
+        serde_json::from_slice::<Vec<ReducerFunction>>(&f).map_err(|error| {
+            format!(
+                "Cannot parse JSON ReducerFunctions file {}: {}",
+                FUNCTIONS_PATH, error
+            )
+        })?;
+        f
+    } else {
+        Vec::from(b"[]")
+    };
 
     let (sub_tx, sub_rx) = mpsc::channel::<EngineAction>(10);
     let (pub_tx, pub_rx) = mpsc::channel::<EngineResult>(10);
-    let mut multirx = runtime::MultiRX::new(pub_rx);
+    let mut multi_pub_rx = runtime::MultiRX::new(pub_rx);
 
-    let timertask = mqtt::task_timer_loop(&sub_tx, &chrono::Duration::milliseconds(250));
-    let file_functions_task =
-        mqtt::task_file_functions_loop(&sub_tx, &prefix_id, "./engine_functions.json");
+    // MQTT Connection
+    let connection_info: ConnectionValues = settings.get::<ConnectionValues>("mqtt.connection")?;
+    let mut subscriptions: Vec<Subscription> = settings
+        .get::<Vec<Subscription>>("mqtt.subscriptions")
+        .unwrap_or(vec![]);
+    subscriptions.push(Subscription {
+        topic: format!("{}/command/#", prefix_id),
+        qos: 0,
+    });
 
-    let mqttsubscribetask = mqtt::task_subscription_loop(&sub_tx, eventloop);
-    let mqttpublishtask = mqtt::task_publication_loop(multirx.create(), client);
-    let multitask = multirx.task_publication_loop();
+    log::info!("Connecting to MQTT broker: {:?}", &connection_info);
+    let (client, eventloop) = mqtt::new_connection(connection_info, subscriptions)
+        .await
+        .map_err(|error| format!("Cannot connect to MQTT broker: {}", error))?;
 
+    // MQTT
+    let mqttsubscribetask =
+        mqtt::task_subscription_loop(sub_tx.clone(), prefix_id.clone(), eventloop);
+    let mqttpublishtask = mqtt::task_publication_loop(multi_pub_rx.create(), client);
+
+    // Senders of EngineAction's
+    let timertask = mqtt::task_timer_loop(sub_tx.clone(), chrono::Duration::milliseconds(250));
+    let load_functions_task =
+        mqtt::task_load_functions_loop(sub_tx.clone(), prefix_id.clone(), functions);
+
+    // Receivers of EngineResult's
+    let save_functions_task =
+        mqtt::task_save_functions_loop(multi_pub_rx.create(), prefix_id.clone());
+
+    let multitask = multi_pub_rx.task_publication_loop();
+
+    // THE RUNTIME ENGINE
     let enginetask = runtime::task_runtime_loop(
-        &pub_tx,
+        pub_tx.clone(),
         sub_rx,
         mqtt::MasterEngine::new(prefix_id, configuration::app_engine_functions()),
         EngineState::default(),
@@ -86,20 +112,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     std::mem::drop(sub_tx);
     std::mem::drop(pub_tx);
 
-    let (final_state, _, _, _, _, _) = try_join!(
-        enginetask,
-        mqttpublishtask,
-        mqttsubscribetask,
-        file_functions_task,
-        timertask,
-        multitask
+    log::info!("Starting myrulesiot...");
+    let (_, _, _, _, _, save_functions_result, _) = try_join!(
+        task::spawn(enginetask),
+        task::spawn(timertask),
+        task::spawn(load_functions_task),
+        task::spawn(mqttsubscribetask),
+        task::spawn(mqttpublishtask),
+        task::spawn(save_functions_task),
+        task::spawn(multitask)
     )?;
-
-    // Open a file for writing
-    write_engine_state_file(&final_state).unwrap_or_else(|_err| {
-        log::warn!("Cannot write final state to file.");
-    });
-
     log::info!("Exiting myrulesiot...");
+
+    if let Some(functions) = save_functions_result {
+        let payload: serde_json::Value = serde_json::from_slice(&functions)?;
+        let file = fs::File::create(FUNCTIONS_PATH)?;
+        serde_json::to_writer_pretty(&file, &payload)?;
+    }
+
     Ok(())
 }
