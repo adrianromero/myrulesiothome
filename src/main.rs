@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mqttpublishtask = mqtt::task_publication_loop(multi_pub_rx.create(), client);
 
     // Senders of EngineAction's
-    let timertask = mqtt::task_timer_loop(sub_tx.clone(), chrono::Duration::milliseconds(250));
+    let timertask = runtime::task_timer_loop(sub_tx.clone(), chrono::Duration::milliseconds(250));
     let load_functions_task =
         mqtt::task_load_functions_loop(sub_tx.clone(), prefix_id.clone(), functions);
 

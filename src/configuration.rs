@@ -21,10 +21,23 @@ use std::collections::HashMap;
 
 use myrulesiot::mqtt::EngineFunction;
 use myrulesiot::rules::forward;
+use myrulesiot::rules::simpleactuator;
 use myrulesiot::rules::zigbee;
 
 pub fn app_engine_functions() -> HashMap<String, EngineFunction> {
     HashMap::from([
+        (
+            String::from("actuator_action"),
+            simpleactuator::actuator_action as EngineFunction,
+        ),
+        (
+            String::from("actuator_json_action"),
+            simpleactuator::actuator_json_action as EngineFunction,
+        ),
+        (
+            String::from("actuator_ikea_remote_toggle"),
+            simpleactuator::actuator_ikea_remote_toggle as EngineFunction,
+        ),
         (
             String::from("ikea_actuator"),
             zigbee::engine_ikea_actuator as EngineFunction,
