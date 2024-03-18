@@ -27,9 +27,8 @@ use tokio::{task, try_join};
 
 use myrulesiot::mqtt::{self, EngineAction, EngineResult, EngineState, ReducerFunction};
 use myrulesiot::mqtt::{ConnectionValues, Subscription};
+use myrulesiot::rules;
 use myrulesiot::runtime;
-
-mod configuration;
 
 const FUNCTIONS_PATH: &str = "./engine_functions.json";
 
@@ -83,7 +82,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("Connecting to MQTT broker: {:?}", &connection_info);
     let (client, eventloop) = mqtt::new_connection(connection_info, subscriptions)
         .await
-        .map_err(|error| format!("Cannot connect to MQTT broker: {}", error))?;
+        .map_err(|error| format!("MQTT error: {}", error))?;
 
     // MQTT
     let mqttsubscribetask =
@@ -105,7 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let enginetask = runtime::task_runtime_loop(
         pub_tx.clone(),
         sub_rx,
-        mqtt::MasterEngine::new(prefix_id, configuration::app_engine_functions()),
+        mqtt::MasterEngine::new(prefix_id, rules::default_engine_functions()),
         EngineState::default(),
     );
 
