@@ -85,18 +85,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map_err(|error| format!("MQTT error: {}", error))?;
 
     // MQTT
-    let mqttsubscribetask =
-        mqtt::task_subscription_loop(sub_tx.clone(), prefix_id.clone(), eventloop);
+    let mqttsubscribetask = mqtt::task_subscription_loop(sub_tx.clone(), eventloop);
     let mqttpublishtask = mqtt::task_publication_loop(multi_pub_rx.create(), client);
 
     // Senders of EngineAction's
     let timertask = runtime::task_timer_loop(sub_tx.clone(), chrono::Duration::milliseconds(250));
-    let load_functions_task =
-        mqtt::task_load_functions_loop(sub_tx.clone(), prefix_id.clone(), functions);
+    let load_functions_task = mqtt::task_load_functions_loop(sub_tx.clone(), functions);
 
     // Receivers of EngineResult's
-    let save_functions_task =
-        mqtt::task_save_functions_loop(multi_pub_rx.create(), prefix_id.clone());
+    let save_functions_task = mqtt::task_save_functions_loop(multi_pub_rx.create());
 
     let multitask = multi_pub_rx.task_publication_loop();
 
