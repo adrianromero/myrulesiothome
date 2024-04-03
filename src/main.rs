@@ -25,8 +25,10 @@ use std::path::Path;
 use tokio::sync::mpsc;
 use tokio::{task, try_join};
 
-use myrulesiot::mqtt::{self, EngineAction, EngineResult, EngineState, ReducerFunction};
-use myrulesiot::mqtt::{ConnectionValues, Subscription};
+use myrulesiot::master::{
+    self, EngineAction, EngineResult, EngineState, MasterEngine, ReducerFunction,
+};
+use myrulesiot::mqtt::{self, ConnectionValues, Subscription};
 use myrulesiot::rules;
 use myrulesiot::runtime;
 
@@ -89,11 +91,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mqttpublishtask = mqtt::task_publication_loop(multi_pub_rx.create(), client);
 
     // Senders of EngineAction's
-    let timertask = runtime::task_timer_loop(sub_tx.clone(), chrono::Duration::milliseconds(250));
-    let load_functions_task = mqtt::task_load_functions_loop(sub_tx.clone(), functions);
+    let timertask = master::task_timer_loop(sub_tx.clone(), chrono::Duration::milliseconds(250));
+    let load_functions_task = master::task_load_functions_loop(sub_tx.clone(), functions);
 
     // Receivers of EngineResult's
-    let save_functions_task = mqtt::task_save_functions_loop(multi_pub_rx.create());
+    let save_functions_task = master::task_save_functions_loop(multi_pub_rx.create());
 
     let multitask = multi_pub_rx.task_publication_loop();
 
@@ -101,7 +103,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let enginetask = runtime::task_runtime_loop(
         pub_tx.clone(),
         sub_rx,
-        mqtt::MasterEngine::new(prefix_id, rules::default_engine_functions()),
+        MasterEngine::new(prefix_id, rules::default_engine_functions()),
         EngineState::default(),
     );
 
