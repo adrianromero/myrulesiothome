@@ -33,6 +33,7 @@ use myrulesiot::rules;
 use myrulesiot::runtime;
 
 const FUNCTIONS_PATH: &str = "./engine_functions.json";
+const EXIT_PATH: &str = "./engine_exit";
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -47,6 +48,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let prefix_id = settings
         .get_string("application.identifier")
         .unwrap_or_else(|_| String::from("HOMERULES"));
+
+    // Exit
+    fs::remove_file(EXIT_PATH).unwrap_or_default();
 
     // Functions
     let functions = if let Ok(true) = Path::new(FUNCTIONS_PATH).try_exists() {
@@ -96,6 +100,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Receivers of EngineResult's
     let save_functions_task = master::task_save_functions_loop(multi_pub_rx.create());
+    let save_exit_task = master::task_save_exit_loop(prefix_id.clone(), multi_pub_rx.create());
 
     let multitask = multi_pub_rx.task_publication_loop();
 
@@ -111,21 +116,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     std::mem::drop(pub_tx);
 
     log::info!("Starting myrulesiot...");
-    let (_, _, _, _, _, save_functions_result, _) = try_join!(
+    let (_, _, _, _, _, save_functions_result, save_exit_result, _) = try_join!(
         task::spawn(enginetask),
         task::spawn(timertask),
         task::spawn(load_functions_task),
         task::spawn(mqttsubscribetask),
         task::spawn(mqttpublishtask),
         task::spawn(save_functions_task),
+        task::spawn(save_exit_task),
         task::spawn(multitask)
     )?;
     log::info!("Exiting myrulesiot...");
 
     if let Some(functions) = save_functions_result {
-        let payload: serde_json::Value = serde_json::from_slice(&functions)?;
-        let file = fs::File::create(FUNCTIONS_PATH)?;
-        serde_json::to_writer_pretty(&file, &payload)?;
+        fs::write(FUNCTIONS_PATH, &functions)?;
+    }
+
+    if let Some(exit) = save_exit_result {
+        fs::write(EXIT_PATH, &exit)?;
     }
 
     Ok(())
